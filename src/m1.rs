@@ -5,9 +5,11 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 use core::fmt::Debug;
 use core::hash::Hasher;
+use std::fmt;
 use std::ops::BitXorAssign;
 
 use crate::field::Field;
+use crate::field::FieldExtension;
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
@@ -15,9 +17,7 @@ pub struct Mersenn31Field(pub u32);
 
 impl Mersenn31Field{
     pub const ORDER: u32 = (1 << 31) - 1;
-    pub const MULTIPLICATIVE_GROUP_GENERATOR: Self = Self(7);
-
-    fn new(value: u32) -> Self{
+    pub const fn new(value: u32) -> Self{
         debug_assert!((value >> 31) == 0);
         
         Self(value)
@@ -30,6 +30,13 @@ impl Mersenn31Field{
         }
         c
     }
+    pub const fn from_nonreduced_u32(c: u64) -> Self {
+        let mut c = c as u32;
+        if c >= Self::ORDER {
+            c -= Self::ORDER;
+        }
+        Self::new(c)
+    }
     fn mul_2exp_u64(&self, exp: u64) -> Self {
         // In a Mersenne field, multiplication by 2^k is just a left rotation by k bits.
         let exp = (exp % 31) as u8;
@@ -38,12 +45,20 @@ impl Mersenn31Field{
         let rotated = left | right;
         Self::new(rotated)
     }
-    fn exp_power_of_2(&self, power_log: usize, count: usize) -> Self {
+
+    #[inline]
+    pub fn div_2exp_u64(&self, exp: u64) -> Self {
+        // In a Mersenne field, division by 2^k is just a right rotation by k bits.
+        let exp = (exp % 31) as u8;
+        let left = self.0 >> exp;
+        let right = (self.0 << (31 - exp)) & ((1 << 31) - 1);
+        let rotated = left | right;
+        Self::new(rotated)
+    }
+
+    fn exp_power_of_2(&self, power_log: usize) -> Self {
         let mut res = *self;
-        let mut count = count;
         for _ in 0..power_log {
-            count += count;
-            println!("{}", count);
             res.square();
         }
         res
@@ -62,12 +77,23 @@ impl Mersenn31Field{
     
         *result
     }
+    // const fn compute_shifts() -> [Self; Self::CHAR_BITS] {
+    //     let mut result = [Self::ZERO; Self::CHAR_BITS];
+    //     let mut i = 0;
+    //     while i < Self::CHAR_BITS {
+    //         result[i] = Self::from_nonreduced_u32(1u64 << i);
+    //         i += 1;
+    //     }
+
+    //     result
+    // }
 }
 impl Default for Mersenn31Field {
     fn default() -> Self {
         Self(0u32)
     }
 }
+
 impl PartialEq for Mersenn31Field {
     fn eq(&self, other: &Self) -> bool {
         self.to_reduced_u32() == other.to_reduced_u32()
@@ -211,7 +237,20 @@ impl Field for Mersenn31Field {
 
         self
     }
+    #[inline(always)]
+    fn from_u32_with_reduction(value: u64) -> Self {
+        Self::from_nonreduced_u32(value)
+    }
 
+}
+impl FieldExtension<2> for Mersenn31Field{
+    const TWO_ADICITY: usize = 2;
+
+    type BaseField = Mersenn31Field;
+
+    fn two_adic_generator(bits: usize) -> Self {
+        todo!()
+    }
 }
 
 #[cfg(test)]
@@ -482,6 +521,6 @@ mod tests {
     #[test]
     fn test_count(){
         let num = Mersenn31Field::from_u64(5).unwrap();
-        let a = num.exp_power_of_2(2, 357913941);
+        let a = num.exp_power_of_2(2);
     }
 }
