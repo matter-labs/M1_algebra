@@ -326,27 +326,26 @@ pub fn rand2_from_rng<R: rand::Rng>(rng: &mut R) -> Mersenn31Field {
 }
 
 
-// #[test]
-// fn test_coset() {
-//     let worker = Worker::new();
-//     let mut rng = rand::thread_rng();
-//     for poly_size_log in 1..10 {
-//         let poly_size = 1 << poly_size_log;
+#[test]
+fn test_coset() {
+    let worker = Worker::new();
+    let mut rng = rand::thread_rng();
 
-//         let original: Vec<Mersenn31Complex> =
-//             (0..poly_size).map(|_| rand_from_rng(&mut rng)).collect();
+    for poly_size_log in 6..7 {
+        let poly_size = 1 << poly_size_log;
 
-//         let forward_twiddles = precompute_twiddles_for_fft::<
-//             Mersenn31Complex,
-//             false,
-//         >(original.len(), &worker);
-//         let mut forward = original.clone();
-//         let coset = Mersenn31Complex::generator();
-//         let res = fft_lde(&mut forward, 1, coset, &worker);
+        let original: Vec<Mersenn31Field> =
+            (0..poly_size).map(|_| rand2_from_rng(&mut rng)).collect();
 
-//         dbg!(res);
-//     }
-// }
+        let mut forward = original.clone();
+        let mut fft_res = fft_with_tricks_for_mersenne(&mut forward, &worker);
+
+        let coset = Mersenn31Complex::generator();
+        let res = fft_lde(&mut fft_res, 1, coset, &worker);
+
+        dbg!(res);
+    }
+}
 
 #[test]
 fn test_over_merssenecomplex_naive() {
