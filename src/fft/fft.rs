@@ -295,24 +295,24 @@ pub(crate) fn serial_ct_ntt_natural_to_bitreversed<E: TwoAdicField>(
     }
 }
 
-// fn fft_lde(input: &mut [Mersenn31Complex], resize_bit: usize, coset: Mersenn31Complex, worker: &Worker) -> Vec<Mersenn31Complex> {
-//     let mut coeff: Vec<Mersenn31Field> = ifft_with_tricks_for_mersenne(input, &worker);
-//     coeff.resize(coeff.len() << resize_bit, Mersenn31Field::ZERO);
-//     let mut new_input_vec: Vec<Mersenn31Complex> = coeff.into_iter().map(Mersenn31Complex::new_from_real).collect();
-//     let new_input_slice = new_input_vec.as_mut_slice();
-//     if coset != Mersenn31Complex::ONE {
-//         distribute_powers::<Mersenn31Complex>(new_input_slice, coset);
-//     }
-//     let forward_twiddles = precompute_twiddles_for_fft::<
-//     Mersenn31Complex,
-//     false,
-//     >(new_input_slice.len(), &worker);
-//     let log_n = log2_n(new_input_slice.len());
-//     serial_ct_ntt_natural_to_bitreversed(new_input_slice, log_n as u32, &forward_twiddles);
-//     bitreverse_enumeration_inplace(new_input_slice);
-//     let dft_res: Vec<Mersenn31Complex> = unpack(&new_input_slice);
-//     dft_res
-// }
+fn fft_lde(input: &mut [Mersenn31Complex], resize_bit: usize, coset: Mersenn31Complex, worker: &Worker) -> Vec<Mersenn31Complex> {
+    let mut coeff: Vec<Mersenn31Field> = ifft_with_tricks_for_mersenne(input, &worker);
+    coeff.resize(coeff.len() << resize_bit, Mersenn31Field::ZERO);
+    let mut new_input_vec: Vec<Mersenn31Complex> = coeff.into_iter().map(Mersenn31Complex::new_from_real).collect();
+    let new_input_slice = new_input_vec.as_mut_slice();
+    if coset != Mersenn31Complex::ONE {
+        distribute_powers::<Mersenn31Complex>(new_input_slice, coset);
+    }
+    let forward_twiddles = precompute_twiddles_for_fft::<
+    Mersenn31Complex,
+    false,
+    >(new_input_slice.len(), &worker);
+    let log_n = log2_n(new_input_slice.len());
+    serial_ct_ntt_natural_to_bitreversed(new_input_slice, log_n as u32, &forward_twiddles);
+    bitreverse_enumeration_inplace(new_input_slice);
+    let dft_res: Vec<Mersenn31Complex> = unpack(&new_input_slice);
+    dft_res
+}
 
 pub fn rand_from_rng<R: rand::Rng>(rng: &mut R) -> Mersenn31Complex {
     let a = Mersenn31Field::from_u64_unchecked(rng.gen_range(0..((1 << 31) - 1)));
