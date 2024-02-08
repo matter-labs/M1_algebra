@@ -34,7 +34,7 @@ impl Mersenn31Complex {
         let mut imag =  tmp.add_assign(&tmp2);
         Self::new(*real, *imag)
     }
-    fn exp_power_of_2(&'_ mut self, power_log: usize) -> Self {
+    pub fn exp_power_of_2(&'_ mut self, power_log: usize) -> Self {
         let mut res = *self;
         for _ in 0..power_log {
             res.mul_assign(&res.clone());

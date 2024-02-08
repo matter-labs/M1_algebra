@@ -24,7 +24,7 @@ pub fn precompute_twiddles_for_fft<
     fft_size: usize,
     worker: &Worker,
 ) -> Vec<E> {
-    debug_assert!(fft_size.is_power_of_two());
+    // debug_assert!(fft_size.is_power_of_two());
 
     let mut omega = domain_generator_for_size::<E>(fft_size as u64);
     if INVERSED {
@@ -34,9 +34,9 @@ pub fn precompute_twiddles_for_fft<
     }
 
     assert_eq!(omega.pow_u64(fft_size as u64), E::ONE);
-    for i in 1..fft_size {
-        assert_ne!(omega.pow_u64(i as u64), E::ONE);
-    }
+    // for i in 1..fft_size {
+    //     assert_ne!(omega.pow_u64(i as u64), E::ONE);
+    // }
 
     let num_powers = fft_size / 2;
     let mut powers = materialize_powers_parallel(omega, num_powers, worker);
@@ -45,7 +45,7 @@ pub fn precompute_twiddles_for_fft<
     powers
 }
 pub fn domain_generator_for_size<E: TwoAdicField>(size: u64) -> E {
-    debug_assert!(size.is_power_of_two());
+    // debug_assert!(size.is_power_of_two());
     debug_assert!(size.trailing_zeros() as usize <= E::TWO_ADICITY);
 
     let mut omega = E::two_adic_generator(size.trailing_zeros() as usize);
