@@ -13,9 +13,9 @@ use crate::field::FieldExtension;
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct Mersenn31Field(pub u32);
+pub struct Mersenne31Field(pub u32);
 
-impl Mersenn31Field{
+impl Mersenne31Field{
     pub const ORDER: u32 = (1 << 31) - 1;
     pub const fn new(value: u32) -> Self{
         debug_assert!((value >> 31) == 0);
@@ -65,7 +65,7 @@ impl Mersenn31Field{
     }
     fn mod_pow(&self, mut exp: u32) -> Self {
         let mut base = *self;
-        let mut result = &mut Mersenn31Field::new(1);
+        let mut result = &mut Mersenne31Field::new(1);
         while exp > 0 {
             if exp % 2 == 1 {
                 result = result.mul_assign(&base.clone());
@@ -88,50 +88,50 @@ impl Mersenn31Field{
     //     result
     // }
 }
-impl Default for Mersenn31Field {
+impl Default for Mersenne31Field {
     fn default() -> Self {
         Self(0u32)
     }
 }
 
-impl PartialEq for Mersenn31Field {
+impl PartialEq for Mersenne31Field {
     fn eq(&self, other: &Self) -> bool {
         self.to_reduced_u32() == other.to_reduced_u32()
     }
 }
-impl Eq for Mersenn31Field {}
+impl Eq for Mersenne31Field {}
 
-impl Hash for Mersenn31Field {
+impl Hash for Mersenne31Field {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u32(self.to_reduced_u32())
     }
 }
 
-impl Ord for Mersenn31Field {
+impl Ord for Mersenne31Field {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.to_reduced_u32().cmp(&other.to_reduced_u32())
     }
 }
 
-impl PartialOrd for Mersenn31Field {
+impl PartialOrd for Mersenne31Field {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Display for Mersenn31Field {
+impl Display for Mersenne31Field {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.0, f)
     }
 }
 
-impl Debug for Mersenn31Field {
+impl Debug for Mersenne31Field {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.0, f)
     }
 }
 
-impl Field for Mersenn31Field {
+impl Field for Mersenne31Field {
     const ZERO: Self = Self(0);
     const ONE: Self = Self(1);
     const TWO: Self = Self(2);
@@ -181,7 +181,7 @@ impl Field for Mersenn31Field {
         if self.is_zero() {
             return None;
         }
-        Some(self.mod_pow(Mersenn31Field::ORDER - 2))
+        Some(self.mod_pow(Mersenne31Field::ORDER - 2))
     }
     
     fn add_assign(&'_ mut self, other: &Self) -> &'_ mut Self{
@@ -243,10 +243,10 @@ impl Field for Mersenn31Field {
     }
 
 }
-impl FieldExtension<2> for Mersenn31Field{
+impl FieldExtension<2> for Mersenne31Field{
     const TWO_ADICITY: usize = 2;
 
-    type BaseField = Mersenn31Field;
+    type BaseField = Mersenne31Field;
 
     fn two_adic_generator(bits: usize) -> Self {
         todo!()
@@ -258,269 +258,269 @@ mod tests {
     use super::*;
     #[test]
     fn basic_properties() {
-        assert_eq!(Mersenn31Field::ZERO, Mersenn31Field(0));
-        assert_eq!(Mersenn31Field::ONE, Mersenn31Field(1));
-        assert_eq!(Mersenn31Field::TWO, Mersenn31Field(2));
-        assert_eq!(Mersenn31Field::MINUS_ONE, Mersenn31Field(Mersenn31Field::ORDER - 1));
+        assert_eq!(Mersenne31Field::ZERO, Mersenne31Field(0));
+        assert_eq!(Mersenne31Field::ONE, Mersenne31Field(1));
+        assert_eq!(Mersenne31Field::TWO, Mersenne31Field(2));
+        assert_eq!(Mersenne31Field::MINUS_ONE, Mersenne31Field(Mersenne31Field::ORDER - 1));
     }
 
     #[test]
     fn test_multiplication() {
-        let a = Mersenn31Field::from_u64(5).unwrap();
-        let b = Mersenn31Field::from_u64(4).unwrap();
+        let a = Mersenne31Field::from_u64(5).unwrap();
+        let b = Mersenne31Field::from_u64(4).unwrap();
         let mut res = a;
         res.mul_assign(&b);
         assert_eq!(res.to_reduced_u32(), 20);
 
-        let a = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 1).unwrap();
-        let b = Mersenn31Field::from_u64(2).unwrap();
+        let a = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 1).unwrap();
+        let b = Mersenne31Field::from_u64(2).unwrap();
         let mut result = a;
         result.mul_assign(&b);
-        assert_eq!(result, Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 2).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 2).unwrap());
 
-        let a = Mersenn31Field::from_u64(12345).unwrap();
-        let b = Mersenn31Field::ONE;
+        let a = Mersenne31Field::from_u64(12345).unwrap();
+        let b = Mersenne31Field::ONE;
         let mut result = a;
         result.mul_assign(&b);
-        assert_eq!(result, Mersenn31Field::from_u64(12345).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(12345).unwrap());
 
-        let a = Mersenn31Field::from_u64(12345).unwrap();
-        let b = Mersenn31Field::ZERO;
+        let a = Mersenne31Field::from_u64(12345).unwrap();
+        let b = Mersenne31Field::ZERO;
         let mut result = a;
         result.mul_assign(&b);
-        assert_eq!(result, Mersenn31Field::ZERO);
+        assert_eq!(result, Mersenne31Field::ZERO);
 
-        let a = Mersenn31Field::from_u64(17).unwrap();
-        let b = Mersenn31Field::from_u64(19).unwrap();
+        let a = Mersenne31Field::from_u64(17).unwrap();
+        let b = Mersenne31Field::from_u64(19).unwrap();
         let mut result1 = a;
         let mut result2 = b;
         result1.mul_assign(&b);
         result2.mul_assign(&a);
         assert_eq!(result1, result2);
 
-        let a = Mersenn31Field::from_u64(123).unwrap();
-        let b = Mersenn31Field::from_u64(456).unwrap();
+        let a = Mersenne31Field::from_u64(123).unwrap();
+        let b = Mersenne31Field::from_u64(456).unwrap();
         let mut result = a;
         result.mul_assign(&b);
-        assert_eq!(result, Mersenn31Field::from_u64(56088 % Mersenn31Field::ORDER as u64).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(56088 % Mersenne31Field::ORDER as u64).unwrap());
 
     }
 
     #[test]
     fn test_square() {
-        let mut a = Mersenn31Field::from_u64(7).unwrap();
+        let mut a = Mersenne31Field::from_u64(7).unwrap();
         a.square();
         assert_eq!(a.to_reduced_u32(), 49);
-        let a = Mersenn31Field::from_u64(2).unwrap();
+        let a = Mersenne31Field::from_u64(2).unwrap();
         let mut result = a.clone();
         result.square();
-        assert_eq!(result, Mersenn31Field::from_u64(4).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(4).unwrap());
 
-        let a = Mersenn31Field::from_u64(3).unwrap();
+        let a = Mersenne31Field::from_u64(3).unwrap();
         let mut result = a.clone();
         result.square();
-        assert_eq!(result, Mersenn31Field::from_u64(9).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(9).unwrap());
 
-        let a = Mersenn31Field::ZERO;
+        let a = Mersenne31Field::ZERO;
         let mut result = a.clone();
         result.square();
-        assert_eq!(result, Mersenn31Field::ZERO);
+        assert_eq!(result, Mersenne31Field::ZERO);
 
-        let a = Mersenn31Field::ONE;
+        let a = Mersenne31Field::ONE;
         let mut result = a.clone();
         result.square();
-        assert_eq!(result, Mersenn31Field::ONE);
+        assert_eq!(result, Mersenne31Field::ONE);
 
     }
 
     #[test]
     fn test_negate() {
-        let mut a = Mersenn31Field::from_u64(5).unwrap();
+        let mut a = Mersenne31Field::from_u64(5).unwrap();
         a.negate();
-        assert_eq!(a.to_reduced_u32(), Mersenn31Field::ORDER - 5);
+        assert_eq!(a.to_reduced_u32(), Mersenne31Field::ORDER - 5);
 
-        let a = Mersenn31Field::from_u64(2).unwrap();
+        let a = Mersenne31Field::from_u64(2).unwrap();
         let mut result = a.clone();
         result.negate();
-        assert_eq!(result, Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 2).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 2).unwrap());
 
-        let a = Mersenn31Field::from_u64(3).unwrap();
+        let a = Mersenne31Field::from_u64(3).unwrap();
         let mut result = a.clone();
         result.negate();
-        assert_eq!(result, Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 3).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 3).unwrap());
 
-        let a = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 1).unwrap();
+        let a = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 1).unwrap();
         let mut result = a.clone();
         result.negate();
-        assert_eq!(result, Mersenn31Field::ONE);
+        assert_eq!(result, Mersenne31Field::ONE);
 
-        let a = Mersenn31Field::ZERO;
+        let a = Mersenne31Field::ZERO;
         let mut result = a.clone();
         result.negate();
-        assert_eq!(result, Mersenn31Field::ZERO);
+        assert_eq!(result, Mersenne31Field::ZERO);
 
-        let a = Mersenn31Field::from_u64(12345).unwrap();
+        let a = Mersenne31Field::from_u64(12345).unwrap();
         let mut result = a.clone();
         result.negate().negate();
         assert_eq!(result, a);
 
-        let a = Mersenn31Field::from_u64(123456).unwrap();
+        let a = Mersenne31Field::from_u64(123456).unwrap();
         let mut result = a.clone();
         result.negate();
-        assert_eq!(result, Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 123456).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 123456).unwrap());
     }
 
     #[test]
     fn test_double() {
-        let mut a = Mersenn31Field::from_u64(12345).unwrap();
+        let mut a = Mersenne31Field::from_u64(12345).unwrap();
         a.double();
         assert_eq!(a.to_reduced_u32(), 24690);
 
-        let a = Mersenn31Field::from_u64(2).unwrap();
+        let a = Mersenne31Field::from_u64(2).unwrap();
         let mut result = a.clone();
         result.double();
-        assert_eq!(result, Mersenn31Field::from_u64(4).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(4).unwrap());
 
-        let a = Mersenn31Field::from_u64(3).unwrap();
+        let a = Mersenne31Field::from_u64(3).unwrap();
         let mut result = a.clone();
         result.double();
-        assert_eq!(result, Mersenn31Field::from_u64(6).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(6).unwrap());
 
-        let a = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 2).unwrap();
+        let a = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 2).unwrap();
         let mut result = a.clone();
         result.double();
-        assert_eq!(result, Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 4).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 4).unwrap());
 
-        let a = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 1).unwrap();
+        let a = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 1).unwrap();
         let mut result = a.clone();
         result.double();
-        assert_eq!(result, Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 2).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 2).unwrap());
 
-        let a = Mersenn31Field::ZERO;
+        let a = Mersenne31Field::ZERO;
         let mut result = a.clone();
         result.double();
-        assert_eq!(result, Mersenn31Field::ZERO);
+        assert_eq!(result, Mersenne31Field::ZERO);
 
-        let a = Mersenn31Field::ONE;
+        let a = Mersenne31Field::ONE;
         let mut result = a.clone();
         result.double();
-        assert_eq!(result, Mersenn31Field::TWO);
+        assert_eq!(result, Mersenne31Field::TWO);
 
-        let a = Mersenn31Field::from_u64(123456).unwrap();
+        let a = Mersenne31Field::from_u64(123456).unwrap();
         let mut result = a.clone();
         result.double();
-        assert_eq!(result, Mersenn31Field::from_u64(246912).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(246912).unwrap());
     }
 
     #[test]
     fn test_inverse() {
-        let a = Mersenn31Field::from_u64(4).unwrap();
+        let a = Mersenne31Field::from_u64(4).unwrap();
         let inv_a = a.inverse().unwrap();
         let mut res = a;
         res.mul_assign(&inv_a);
         // a * a^-1 should be 1
         assert_eq!(res.to_reduced_u32(), 1);
 
-        let a = Mersenn31Field::from_u64(2).unwrap();
+        let a = Mersenne31Field::from_u64(2).unwrap();
         let inv_a = a.inverse().unwrap();
         let mut res = a;
         res.mul_assign(&inv_a);
-        assert_eq!(res, Mersenn31Field::ONE);
+        assert_eq!(res, Mersenne31Field::ONE);
 
-        let a = Mersenn31Field::from_u64(3).unwrap();
+        let a = Mersenne31Field::from_u64(3).unwrap();
         let inv_a = a.inverse().unwrap();
         let mut res = a;
         res.mul_assign(&inv_a);
         assert_eq!(res.to_reduced_u32(), 1);
 
-        let a = Mersenn31Field::ONE;
+        let a = Mersenne31Field::ONE;
         let inv_a = a.inverse().unwrap();
-        assert_eq!(inv_a, Mersenn31Field::ONE);
+        assert_eq!(inv_a, Mersenne31Field::ONE);
 
-        let a = Mersenn31Field::ZERO;
+        let a = Mersenne31Field::ZERO;
         assert!(a.inverse().is_none());
 
-        let a = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 2).unwrap();
+        let a = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 2).unwrap();
         let inv_a = a.inverse().unwrap();
         let mut res = a;
         res.mul_assign(&inv_a);
-        assert_eq!(res, Mersenn31Field::ONE);
+        assert_eq!(res, Mersenne31Field::ONE);
 
-        let a = Mersenn31Field::from_u64(4).unwrap();
+        let a = Mersenne31Field::from_u64(4).unwrap();
         let inv_a = a.inverse().unwrap();
         let double_inv_a = inv_a.inverse().unwrap();
         assert_eq!(a, double_inv_a);
 
-        let a = Mersenn31Field::from_u64(123456).unwrap();
+        let a = Mersenne31Field::from_u64(123456).unwrap();
         let inv_a = a.inverse().unwrap();
         let mut res = a;
         res.mul_assign(&inv_a);
-        assert_eq!(res, Mersenn31Field::ONE);
+        assert_eq!(res, Mersenne31Field::ONE);
 
     }
 
     #[test]
     fn test_add() {
-        let a = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 2).unwrap();
-        let b = Mersenn31Field::from_u64(10).unwrap();
+        let a = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 2).unwrap();
+        let b = Mersenne31Field::from_u64(10).unwrap();
         let mut res = a;
         res.add_assign(&b);
         assert_eq!(res.to_reduced_u32(), 8);  
-        let a = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 2).unwrap();
-        let b = Mersenn31Field::from_u64(4).unwrap();
+        let a = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 2).unwrap();
+        let b = Mersenne31Field::from_u64(4).unwrap();
         let mut sum = a;
         sum.add_assign(&b);
-        assert_eq!(sum, Mersenn31Field::from_u64(2).unwrap());
+        assert_eq!(sum, Mersenne31Field::from_u64(2).unwrap());
 
-        let a = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 1).unwrap();
-        let b = Mersenn31Field::ONE;
+        let a = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 1).unwrap();
+        let b = Mersenne31Field::ONE;
         let mut sum = a;
         sum.add_assign(&b);
-        assert_eq!(sum, Mersenn31Field::ZERO);
+        assert_eq!(sum, Mersenne31Field::ZERO);
 
-        let a = Mersenn31Field::from_u64(10).unwrap();
-        let b = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 8).unwrap();
+        let a = Mersenne31Field::from_u64(10).unwrap();
+        let b = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 8).unwrap();
         let mut sum = a;
         sum.add_assign(&b);
-        assert_eq!(sum, Mersenn31Field::from_u64(2).unwrap());
+        assert_eq!(sum, Mersenne31Field::from_u64(2).unwrap());
 
-        let a = Mersenn31Field::from_u64(10).unwrap();
-        let b = Mersenn31Field::from_u64(20).unwrap();
+        let a = Mersenne31Field::from_u64(10).unwrap();
+        let b = Mersenne31Field::from_u64(20).unwrap();
         let mut sum = a;
         sum.add_assign(&b);
-        assert_eq!(sum, Mersenn31Field::from_u64(30).unwrap());
+        assert_eq!(sum, Mersenne31Field::from_u64(30).unwrap());
     }
 
     #[test]
     fn test_sub() {
-        let a = Mersenn31Field::from_u64(2).unwrap();
-        let b = Mersenn31Field::from_u64(10).unwrap();
+        let a = Mersenne31Field::from_u64(2).unwrap();
+        let b = Mersenne31Field::from_u64(10).unwrap();
         let mut res = a;
         res.sub_assign(&b);
-        assert_eq!(res.to_reduced_u32(), Mersenn31Field::ORDER - 8);
+        assert_eq!(res.to_reduced_u32(), Mersenne31Field::ORDER - 8);
 
-        let a = Mersenn31Field::from_u64(3).unwrap();
-        let b = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 2).unwrap();
+        let a = Mersenne31Field::from_u64(3).unwrap();
+        let b = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 2).unwrap();
         let mut result = a;
         result.sub_assign(&b);
-        assert_eq!(result, Mersenn31Field::from_u64(5).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(5).unwrap());
 
         let min_val = 0; 
-        let a = Mersenn31Field::from_u64(min_val as u64).unwrap();
-        let b = Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 1).unwrap();
+        let a = Mersenne31Field::from_u64(min_val as u64).unwrap();
+        let b = Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 1).unwrap();
         let mut result = a;
         result.sub_assign(&b);
-        assert_eq!(result, Mersenn31Field::ONE);
+        assert_eq!(result, Mersenne31Field::ONE);
 
-        let a = Mersenn31Field::from_u64(10).unwrap();
-        let b = Mersenn31Field::from_u64(15).unwrap();
+        let a = Mersenne31Field::from_u64(10).unwrap();
+        let b = Mersenne31Field::from_u64(15).unwrap();
         let mut result = a;
         result.sub_assign(&b);
-        assert_eq!(result, Mersenn31Field::from_u64(Mersenn31Field::ORDER as u64 - 5).unwrap());
+        assert_eq!(result, Mersenne31Field::from_u64(Mersenne31Field::ORDER as u64 - 5).unwrap());
     }
     #[test]
     fn test_count(){
-        let num = Mersenn31Field::from_u64(5).unwrap();
+        let num = Mersenne31Field::from_u64(5).unwrap();
         let a = num.exp_power_of_2(2);
     }
 }

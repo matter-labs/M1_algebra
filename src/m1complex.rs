@@ -1,32 +1,32 @@
 
 use std::fmt::{Display, Formatter};
 
-use crate::{field::{Field, FieldExtension, TwoAdicField}, m1::Mersenn31Field};
+use crate::{field::{Field, FieldExtension, TwoAdicField}, m1::Mersenne31Field};
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug, Default)]
-pub struct Mersenn31Complex {
-    pub real_part: Mersenn31Field,
-    pub imag_part: Mersenn31Field,
+pub struct Mersenne31Complex {
+    pub real_part: Mersenne31Field,
+    pub imag_part: Mersenne31Field,
 }
 
-impl Mersenn31Complex {
-    pub const fn new(real: Mersenn31Field, imag: Mersenn31Field) -> Self {
+impl Mersenne31Complex {
+    pub const fn new(real: Mersenne31Field, imag: Mersenne31Field) -> Self {
         Self { real_part: real, imag_part: imag, }
     }
     pub fn conjugate(&'_ mut self) -> &'_ mut Self {
         self.imag_part.negate();
         self
     }
-    pub fn new_from_real(real: Mersenn31Field) -> Self {
-        Self { real_part: real, imag_part: Mersenn31Field::ZERO, }
+    pub fn new_from_real(real: Mersenne31Field) -> Self {
+        Self { real_part: real, imag_part: Mersenne31Field::ZERO, }
     }
 
     fn mul_naive(&'_ mut self, other: &Self) -> Self {
         let mut tmp = self.real_part;
-        let mut real_chank_1 = tmp.mul_assign(&other.real_part);
+        let mut real_chunk_1 = tmp.mul_assign(&other.real_part);
         let mut tmp = self.imag_part;
         let real_chank_2 = tmp.mul_assign(&other.imag_part);
-        let mut real = real_chank_1.sub_assign(&real_chank_2);
+        let mut real = real_chunk_1.sub_assign(&real_chank_2);
         let mut binding = self.real_part;
         let tmp = binding.mul_assign(&other.imag_part);
         let mut binding = self.imag_part;
@@ -41,7 +41,7 @@ impl Mersenn31Complex {
         }
         res
     }
-    pub fn magnitude_squared(&self) -> Mersenn31Field {
+    pub fn magnitude_squared(&self) -> Mersenne31Field {
         let mut left = self.real_part;
         let left = left.square();
         let mut right = self.imag_part;
@@ -56,30 +56,30 @@ impl Mersenn31Complex {
         )
     }
     pub fn generator() -> Self {
-        Self::new(Mersenn31Field::new(12), Mersenn31Field::ONE)
+        Self::new(Mersenne31Field::new(12), Mersenne31Field::ONE)
     }
 }
-impl TwoAdicField for Mersenn31Complex {
+impl TwoAdicField for Mersenne31Complex {
     const TWO_ADICITY: usize = 32;
-    type BaseField = Mersenn31Field;
+    type BaseField = Mersenne31Field;
 
     fn two_adic_generator(bits: usize) -> Self {
         assert!(bits <= Self::TWO_ADICITY);
         let mut base = Self::new(
-            Mersenn31Field::new(1_166_849_849),
-            Mersenn31Field::new(1_117_296_306),
+            Mersenne31Field::new(1_166_849_849),
+            Mersenne31Field::new(1_117_296_306),
         );
         base.exp_power_of_2(Self::TWO_ADICITY - bits)
     }
 }
-impl Field for Mersenn31Complex {
-    const ZERO: Self = Self::new(Mersenn31Field(0), Mersenn31Field(0));
+impl Field for Mersenne31Complex {
+    const ZERO: Self = Self::new(Mersenne31Field(0), Mersenne31Field(0));
 
-    const ONE: Self = Self::new(Mersenn31Field(1), Mersenn31Field(0));
+    const ONE: Self = Self::new(Mersenne31Field(1), Mersenne31Field(0));
 
-    const TWO: Self = Self::new(Mersenn31Field(2), Mersenn31Field(0));
+    const TWO: Self = Self::new(Mersenne31Field(2), Mersenne31Field(0));
 
-    const MINUS_ONE: Self = Self::new(Mersenn31Field(Mersenn31Field::ORDER - 1), Mersenn31Field(0));
+    const MINUS_ONE: Self = Self::new(Mersenne31Field(Mersenne31Field::ORDER - 1), Mersenne31Field(0));
 
 
     fn as_u64(self) -> u64 {
@@ -111,7 +111,7 @@ impl Field for Mersenn31Complex {
         let mut tmp = *self;
         let a = self.magnitude_squared().inverse();
         let conj = tmp.conjugate();
-        conj.mul_assign(&Self::new(a.unwrap(), Mersenn31Field::ZERO));
+        conj.mul_assign(&Self::new(a.unwrap(), Mersenne31Field::ZERO));
         let res = *conj;
         Some(res)
     }
@@ -171,11 +171,11 @@ impl Field for Mersenn31Complex {
         todo!()
     }
     fn from_u32_with_reduction(c: u64) -> Self {
-        let c = Mersenn31Field::from_nonreduced_u32(c);
-        Self::new(c, Mersenn31Field::ZERO)
+        let c = Mersenne31Field::from_nonreduced_u32(c);
+        Self::new(c, Mersenne31Field::ZERO)
     }
 }
-impl Display for Mersenn31Complex {
+impl Display for Mersenne31Complex {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} + {}i", self.real_part, self.imag_part)
     }
@@ -214,11 +214,11 @@ mod tests {
 
     #[test]
     fn mul() {
-        let mut binding = (Mersenn31Complex::new(Mersenn31Field::TWO, Mersenn31Field::TWO));
-        let mut result = binding.mul_assign(&Mersenn31Complex::new(Mersenn31Field::from_u64(4).unwrap(), Mersenn31Field::from_u64(5).unwrap()));
+        let mut binding = (Mersenne31Complex::new(Mersenne31Field::TWO, Mersenne31Field::TWO));
+        let mut result = binding.mul_assign(&Mersenne31Complex::new(Mersenne31Field::from_u64(4).unwrap(), Mersenne31Field::from_u64(5).unwrap()));
         assert_eq!(
             *result,
-            Mersenn31Complex::new(*Mersenn31Field::TWO.negate(), Mersenn31Field::from_u64(18).unwrap())
+            Mersenne31Complex::new(*Mersenne31Field::TWO.negate(), Mersenne31Field::from_u64(18).unwrap())
 
         );
     }
@@ -236,17 +236,17 @@ mod tests {
         // assert_eq!(complex1.imag_part, Mersenn31Field::new(6));
 
 
-        let mut complex1 = Mersenn31Complex::new(Mersenn31Field::new(1491731485), Mersenn31Field::new(864446369));
-        let complex2 = Mersenn31Complex::new(Mersenn31Field::new(1491731485), Mersenn31Field::new(1283037278));
+        let mut complex1 = Mersenne31Complex::new(Mersenne31Field::new(1491731485), Mersenne31Field::new(864446369));
+        let complex2 = Mersenne31Complex::new(Mersenne31Field::new(1491731485), Mersenne31Field::new(1283037278));
 
         // Perform the addition
         complex1.add_assign(&complex2);
 
         // Expected result: (1 + 3) + (2 + 4)i = 4 + 6i
-        assert_eq!(complex1.real_part, Mersenn31Field::new(835979323));
+        assert_eq!(complex1.real_part, Mersenne31Field::new(835979323));
         dbg!(complex1.imag_part);
-        dbg!(Mersenn31Field::new(2147483647));
-        assert_eq!(complex1.imag_part, Mersenn31Field::new(2147483647));
+        dbg!(Mersenne31Field::new(2147483647));
+        assert_eq!(complex1.imag_part, Mersenne31Field::new(2147483647));
 
 
     }

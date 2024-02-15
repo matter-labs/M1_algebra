@@ -12,7 +12,7 @@ pub trait Field:
     + std::marker::Sync
     + std::default::Default
 {
-    // const N = MersinsePrime; // 4
+    // const N = MersennePrime; // 4
     // identities
     const ZERO: Self;
     const ONE: Self;
