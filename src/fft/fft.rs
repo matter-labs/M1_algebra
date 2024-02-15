@@ -96,39 +96,6 @@ fn pack_real_as_complex(input: &[Mersenne31Field]) -> Vec<Mersenne31Complex>{
     result
 }
 
-// -- Seems to be equivalent to unpack(&packing(input))
-fn special_packing(input: &[Mersenne31Field]) -> Vec<Mersenne31Complex>{
-
-    unpack_after_fft(&pack_real_as_complex(input), InvFlag::Direct)
-    // assert!(input.len() % 2 == 0);
-
-    // let mut even_tuple = Vec::new();
-    // let mut odd_tuple = Vec::new();
-
-    // for (index, &element) in input.iter().enumerate() {
-    //     if index % 2 == 0 {
-    //         even_tuple.push(element);
-    //     } else {
-    //         odd_tuple.push(element);
-    //     }
-    // }
-
-    // let result: Vec<Mersenne31Complex> = even_tuple
-    //     .iter()
-    //     .zip(odd_tuple)
-    //     .map(|(&x, y)| Mersenne31Complex::new(x, y)) 
-    //     .collect();
-    // let res = unpack(&result);
-    // res
-}
-
-fn special_unpacking(input: &[Mersenne31Complex]) -> Vec<Mersenne31Field>{
-
-    let tmp = idft_pack(input, InvFlag::Direct);
-    let res = unpack_complex_as_real(&tmp);
-    res
-}
-
 /// This function is applied to fft image of a packed complex vector
 /// to recover fft image of the original real vector.
 /// Only sends (n/2 + 1) elements as others are recoverable due to symmetry condition a_k = conj(a_{n-k})
@@ -270,10 +237,10 @@ fn unpack_complex_as_real(input: &[Mersenne31Complex]) -> Vec<Mersenne31Field> {
 }
 
 pub fn ifft_natural_to_natural<E: TwoAdicField>(input: &mut [E], coset: E, twiddles: &[E]) {
-    // debug_assert!(input.len().is_power_of_two());
-    // if input.len() != 1 {
-    //     debug_assert!(input.len() == twiddles.len() * 2);
-    // }
+    debug_assert!(input.len().is_power_of_two());
+    if input.len() != 1 {
+        debug_assert!(input.len() == twiddles.len() * 2);
+    }
 
     let log_n = input.len().trailing_zeros();
 
@@ -617,77 +584,149 @@ pub fn lde_compress(
     assert!((base_bits + resize) <= 31);
 
     let mut w = fft_with_tricks_for_mersenne(input ,worker);
-
-
-    let mut c0 = w[0].div_2exp_u64(base_bits as u64);
+    let poly_size = w.len();
+    let c0 = w[0].div_2exp_u64(base_bits as u64);
 
     w[0] = Mersenne31Complex::ZERO;
 
-    let mut omega = domain_generator_for_size::<Mersenne31Complex>(1 << (base_bits + resize) as u64)
+    let mut omega = Mersenne31Complex::two_adic_generator(base_bits + resize)
         .inverse().expect("must always exist for domain generator");
 
 
-    let num_powers = resize;
+    let num_powers = 1 << resize;
     let mut powers = materialize_powers_parallel(omega, num_powers, worker);
     bitreverse_enumeration_inplace(&mut powers);
 
-
-    let cosets: Vec<Mersenne31Field> = powers.iter().flat_map(|t| {
-        // t^(k-H/2) where k is iter 
-        let mut t = t.clone();
-        let right_part = t.exp_power_of_2(base_bits -1).inverse().unwrap();
-        let poly_size = w.len();
-        let mut left_part = materialize_powers_parallel(t, poly_size, worker);
-        bitreverse_enumeration_inplace(&mut left_part);
-    
-        let mut equation: Vec<Mersenne31Complex> = w.iter().zip(&left_part)
-        .map(|(elem, t)| {
-            let mut tmp = *t; // Assuming cloning or copying is possible and cheap for Mersenn31Complex
-            tmp.mul_assign(elem);
-            tmp.mul_assign(&right_part);
-            tmp
+    let lde_res: Vec<Vec<Mersenne31Field>> = powers.iter().map(|t: &Mersenne31Complex| {
+        // t^(k-H/2) where k = 1, ..., H-1
+        // to simplify evaluation: t^k * t^-H/2
+        let mut t_pow_h_div_2 = t.clone();
+        let t_pow_h_div_2 = t_pow_h_div_2.exp_power_of_2(base_bits - 1).inverse().unwrap();
+        let mut t_pow_k = materialize_powers_parallel(*t, poly_size, worker);
+        bitreverse_enumeration_inplace(&mut t_pow_k);
+        let shift_factor:Vec<Mersenne31Complex> = t_pow_k.iter().map(|a| {
+            let mut a = a.clone();
+            a.mul_assign(&t_pow_h_div_2);
+            a
         }).collect();
-    
+        let mut equation: Vec<Mersenne31Complex> = w.iter().zip(&shift_factor).map(|(elem, shift)| {
+            let mut e = elem.clone();
+            e.mul_assign(&shift);
+            e
+        }).collect();
         ifft_with_tricks_for_mersenne(&mut equation, worker)
     }).collect();
 
-    let mut compress_value = Vec::with_capacity(1 << (base_bits + resize));
-    compress_value.extend(cosets);
+    let mut res: Vec<Mersenne31Field> = Vec::with_capacity(1 << (base_bits + resize));
+    for i in 0..(1 << base_bits) {
+        res.extend(lde_res.iter().map(| x| x[i]))
+    } 
 
-    (compress_value, c0, base_bits )
+    (res, c0, base_bits )
+}
+
+use itertools::Itertools;
+pub fn lde_decompress(input: &[Mersenne31Field], c0: Mersenne31Complex, h: usize, worker: &Worker) -> Vec<Mersenne31Complex>{
+    // p(x) = phi(t)*F + c0
+    let bits = log2_n(input.len());
+    let resize_bits = bits - h;
+
+    // phi(t) = t^H/2
+    let omega = Mersenne31Complex::two_adic_generator(bits);
+    let num_powers = 1 << resize_bits;
+    let mut powers = materialize_powers_parallel(omega, num_powers, worker);
+    bitreverse_enumeration_inplace(&mut powers);
+    let t: Vec<Mersenne31Complex> = powers.iter().map(|x| {
+        let mut t = x.clone();
+        let t = t.exp_power_of_2(h - 1);
+        t
+    }).collect();
+    let mut res = Vec::with_capacity(input.len());
+    for chunk in input.iter().chunks(1 << resize_bits).into_iter(){
+        res.extend(chunk.into_iter().zip(&t).map(|(elem, t)| {
+            let mut tmp = t.clone();
+            tmp.mul_assign(&Mersenne31Complex::new_from_real(*elem));
+            tmp.add_assign(&c0);
+            tmp
+    
+        }));
+    }
+
+    res
 }
 
 #[test]
-
-fn test_lde_compress() {
+fn lde_compress_test()
+{
+    const ADDED_BITS: usize = 1;
     let worker = Worker::new();
-    let mut rng = rand::thread_rng();
-    
-    let logsize = 9;
+    let value = [Mersenne31Field::ONE, Mersenne31Field::TWO, Mersenne31Field::ZERO, Mersenne31Field::MINUS_ONE].to_vec();
+    let mut input_real = value.clone();
+    let expected_values = 
+        [
+            Mersenne31Complex::new_from_real(Mersenne31Field::ONE),
+            Mersenne31Complex::new(Mersenne31Field::new(1073741824), Mersenne31Field::new(32768)),
+            Mersenne31Complex::new_from_real(Mersenne31Field::TWO),
+            Mersenne31Complex::new(Mersenne31Field::new(1073741824), Mersenne31Field::new(2147418111)),
+            Mersenne31Complex::new_from_real(Mersenne31Field::ZERO),
+            Mersenne31Complex::new(Mersenne31Field::new(1073741824), Mersenne31Field::new(2147450879)),
+            Mersenne31Complex::new_from_real(Mersenne31Field::MINUS_ONE),
+            Mersenne31Complex::new(Mersenne31Field::new(1073741824), Mersenne31Field::new(65536)),
+        ]
+        .to_vec();
 
-    let poly_size = 1 << logsize; 
+    // let values = [
+    //     Mersenne31Field::new(1192083057),
+    //     Mersenne31Field::new(1317644184),
+    //     Mersenne31Field::new(1777280870),
+    //     Mersenne31Field::new(5599001), 
+    //     Mersenne31Field::new(614669447), 
+    //     Mersenne31Field::new(1350110858),
+    //     Mersenne31Field::new(293550253),
+    //     Mersenne31Field::new(232212973),
+    // ].to_vec();
+    let (compressed, c0, h) = lde_compress(&mut input_real, ADDED_BITS, &worker);
+    dbg!(compressed.clone());
+    let output = lde_decompress(&compressed, c0, h, &worker);
+    dbg!(output.clone());
 
-    let mut acc = Mersenne31Field::ZERO;
+    assert_eq!(expected_values, output);
 
-    let mut poly = Vec::with_capacity(poly_size);
-    for i in 0..poly_size-1 {
-        let tmp = rand2_from_rng(&mut rng);
-        poly.push(tmp);
-        acc.add_assign(&tmp);
-    }
 
-    poly.push(* acc.negate()); 
-
-    let resize = 5;
-
-    let extended1 = lde_twisted_naive(&poly, resize, &worker);
-
-    let (extended2, c0, _) = lde_compress(&mut poly.clone(), resize, &worker);
-
-    assert!(c0 == Mersenne31Complex::ZERO);
-    assert!(extended1.len() == extended2.len());
-    extended1.iter().zip(extended2.iter()).map(|(lhs, rhs)|assert!(*lhs == *rhs)).count();
 }
+
+
+// #[test]
+
+// fn test_lde_compress() {
+//     let worker = Worker::new();
+//     let mut rng = rand::thread_rng();
+    
+//     let logsize = 9;
+
+//     let poly_size = 1 << logsize; 
+
+//     let mut acc = Mersenne31Field::ZERO;
+
+//     let mut poly = Vec::with_capacity(poly_size);
+//     for i in 0..poly_size-1 {
+//         let tmp = rand2_from_rng(&mut rng);
+//         poly.push(tmp);
+//         acc.add_assign(&tmp);
+//     }
+
+//     poly.push(* acc.negate()); 
+
+//     let resize = 5;
+
+//     let extended1 = lde_twisted_naive(&poly, resize, &worker);
+
+//     let (extended2, c0, _) = lde_compress(&mut poly.clone(), resize, &worker);
+
+//     assert!(c0 == Mersenne31Complex::ZERO);
+//     assert!(extended1.len() == extended2.len());
+//     extended1.iter().zip(extended2.iter()).map(|(lhs, rhs)|assert!(*lhs == *rhs)).count();
+// }
 
 
 pub fn rand_from_rng<R: rand::Rng>(rng: &mut R) -> Mersenne31Complex {
@@ -701,33 +740,11 @@ pub fn rand2_from_rng<R: rand::Rng>(rng: &mut R) -> Mersenne31Field {
     a
 }
 
-
 pub enum InvFlag {
     Direct,
     Inverse,
 }
 
-
-// #[test]
-// fn test_coset() {
-//     let worker = Worker::new();
-//     let mut rng = rand::thread_rng();
-
-//     for poly_size_log in 2..3 {
-//         let poly_size = 1 << poly_size_log;
-
-//         let original: Vec<Mersenn31Field> =
-//             (0..poly_size).map(|_| rand2_from_rng(&mut rng)).collect();
-
-//         let mut forward = original.clone();
-//         let mut forward2 = original.clone();
-//         let coset = Mersenn31Complex::generator();
-//         let res = fft_lde(&mut forward, 1, coset, &worker);
-//         let res2 = fft_lde_naive(&mut forward2, 1, coset, &worker);
-//         dbg!(res);
-//         dbg!(res2);
-//     }
-// }
 
 #[test]
 fn test_over_merssenecomplex_naive() {
@@ -808,108 +825,47 @@ fn test_over_mersennetrick_inverse() {
         let mut fft_res = fft_with_tricks_for_mersenne(&mut forward, &worker);
         // bitreverse_enumeration_inplace(&mut fft_res);
         let ifft_res = ifft_with_tricks_for_mersenne(&mut fft_res, &worker);
-        dbg!(ifft_res.clone());
         assert_eq!(original.to_vec(), ifft_res, "failed for size 2^{}", poly_size_log);
     }
 }
 #[test]
-fn test_from_ifft_to_fft() {
+fn test_over_mersennetrick(){
+
     let worker = Worker::new();
     let mut rng = rand::thread_rng();
-    for poly_size_log in 3..4 {
+    for poly_size_log in 1..10 {
         let poly_size = 1 << poly_size_log; 
-
-        let original: Vec<Mersenne31Field> =
+        let mut a: Vec<Mersenne31Field> =
             (0..poly_size).map(|_| rand2_from_rng(&mut rng)).collect();
         
-        dbg!(original.clone());
+        let mut b: Vec<Mersenne31Field> =
+            (0..poly_size).map(|_| rand2_from_rng(&mut rng)).collect();
+        let mut a_copy = a.clone();
+        let b_copy = b.clone();
+    
+        let mut fft_a = fft_with_tricks_for_mersenne(&mut a, &worker);
+        let fft_b = fft_with_tricks_for_mersenne(&mut b, &worker);
 
-        let mut forward = special_packing(&original.clone());
+        let mut fft_c: Vec<Mersenne31Complex> = vec![];
+        for (i, j) in fft_a.iter().zip(fft_b.iter()){
+            let mut a = *i;
+            a.mul_assign(&j);
+            fft_c.push(a)
+        }
 
-        let mut ifft_res = ifft_with_tricks_for_mersenne(&mut forward, &worker);
-
-        let mut fft_res = fft_with_tricks_for_mersenne(&mut ifft_res, &worker);
-        // bitreverse_enumeration_inplace(&mut fft_res);
-        // let ifft_res = ifft_with_tricks_for_mersenne(&mut fft_res, &worker);
-        // dbg!(ifft_res.clone())
-        dbg!(fft_res.clone());
-        let test = special_unpacking(&fft_res);
-        dbg!(test.clone());
-        assert_eq!(original, test, "failed for size 2^{}", poly_size_log);
+        let c = ifft_with_tricks_for_mersenne(&mut fft_c, &worker);
+        let mut res = Vec::with_capacity(poly_size);
+        for i in 0..poly_size {
+            let mut tmp = Mersenne31Field::ZERO;
+            for j in 0..poly_size {
+                let mut x = a_copy[j];
+                x.mul_assign(&b_copy[(poly_size + i - j) % poly_size]);
+                tmp.add_assign(&x);
+            }
+            res.push(tmp);
+        }
+    
+        assert_eq!(c, res);
     }
 }
-// #[test]
-// fn test_over_mersennetrick(){
-
-//     let worker = Worker::new();
-//     let mut rng = rand::thread_rng();
-//     for poly_size_log in 1..10 {
-//         let poly_size = 1 << poly_size_log; 
-//         let mut a: Vec<Mersenn31Field> =
-//             (0..poly_size).map(|_| rand2_from_rng(&mut rng)).collect();
-        
-//         let mut b: Vec<Mersenn31Field> =
-//             (0..poly_size).map(|_| rand2_from_rng(&mut rng)).collect();
-//         let mut a_copy = a.clone();
-//         let b_copy = b.clone();
-    
-//         let mut fft_a = fft_with_tricks_for_mersenne(&mut a, &worker);
-//         let fft_b = fft_with_tricks_for_mersenne(&mut b, &worker);
-
-//         let mut fft_c: Vec<Mersenn31Complex> = vec![];
-//         for (i, j) in fft_a.iter().zip(fft_b.iter()){
-//             let mut a = *i;
-//             a.mul_assign(&j);
-//             fft_c.push(a)
-//         }
-
-//         let c = ifft_with_tricks_for_mersenne(&mut fft_c, &worker);
-//         let mut res = Vec::with_capacity(poly_size);
-//         for i in 0..poly_size {
-//             let mut tmp = Mersenn31Field::ZERO;
-//             for j in 0..poly_size {
-//                 let mut x = a_copy[j];
-//                 x.mul_assign(&b_copy[(poly_size + i - j) % poly_size]);
-//                 tmp.add_assign(&x);
-//             }
-//             res.push(tmp);
-//         }
-    
-//         assert_eq!(c, res);
-//     }
-// }
-// #[test]
-// fn basic() {
-
-//     // A few polynomials:
-//     // 5 + 4x
-//     // 2 + 3x
-//     // 0
-//     let mut mat =
-//         vec![
-//             Mersenn31Complex::new_from_real(Mer5),
-//             Mersenn31Complex::from_canonical_u8(2),
-//             Mersenn31Complex::zero(),
-//             Mersenn31Complex::from_canonical_u8(4),
-//             Mersenn31Complex::from_canonical_u8(3),
-//             Mersenn31Complex::zero(),
-//         ];
-
-//     let dft = naive_dft(&mut mat);
-//     // Expected evaluations on {1, -1}:
-//     // 9, 1
-//     // 5, -1
-//     // 0, 0
-//     let tmp = vec![
-//         Mersenn31Complex::from_canonical_u8(9),
-//         Mersenn31Complex::from_canonical_u8(5),
-//         Mersenn31Complex::zero(),
-//         Mersenn31Complex::one(),
-//         Mersenn31Complex::neg_one(),
-//         Mersenn31Complex::zero(),
-//     ];
-//     assert_eq!(
-//         dft, tmp
-//     )
-// }
 
