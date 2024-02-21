@@ -182,25 +182,30 @@ fn test_compare() {
     use crate::fft::tooling::{
         distribute_powers, domain_generator_for_size, precompute_twiddles_for_fft,
     };
+    use std::time::{Duration, Instant};
 
     let worker = Worker::new();
     let mut rng = rand::thread_rng();
 
-    for log_n in 1..16 {
+    for log_n in 1..17 {
         let n = 1 << log_n;
 
         let mut x: Vec<M31C> = (0..n).map(|_| rand_from_rng(&mut rng)).collect();
 
         let twiddles = precompute_twiddles_for_fft::<M31C, false>(x.len(), &worker);
         let mut reference = x.clone();
+        let start = Instant::now();
         serial_ct_ntt_natural_to_bitreversed(&mut reference, log_n, &twiddles[..]);
+        let duration_reference = start.elapsed();
         bitreverse_enumeration_inplace(&mut reference);
 
         let mut twiddles = vec![M31C::ONE; n];
         let omega = domain_generator_for_size::<M31C>(n as u64);
         distribute_powers(&mut twiddles, omega);
         let mut y = vec![M31C::ZERO; n];
+        let start = Instant::now();
         stockham_radix_8_dif(&mut x, &mut y, &twiddles);
+        let duration_stockham = start.elapsed();
 
         // for (i, (output, control)) in x.iter().zip(&reference).enumerate() {
         //     println!("{} {}", *output, control);
@@ -208,5 +213,10 @@ fn test_compare() {
         for (i, (output, control)) in y.iter().zip(reference).enumerate() {
             assert_eq!(*output, control, "failed at {}", i);
         }
+
+        println!(
+            "log_n = {}, reference took {:?}, stockham took {:?}",
+            log_n, duration_reference, duration_stockham
+        );
     }
 }
