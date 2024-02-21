@@ -1,10 +1,3 @@
-use crate::fft::bitreverse::bitreverse_enumeration_inplace;
-use crate::fft::tooling::log2_n;
-use crate::fft::tooling::{
-    distribute_powers, domain_generator_for_size, materialize_powers_parallel,
-    precompute_twiddles_for_fft,
-};
-use crate::field::TwoAdicField;
 use crate::m1::Mersenne31Field;
 use crate::m1complex::Mersenne31Complex;
 use crate::{field::Field, worker::Worker};
@@ -34,6 +27,35 @@ fn mul_assign_w_3_8(x: &mut M31C) {
 // Like boojum-cuda, uses DIT for natural->bitrev.
 // Obviously the math here isn't optimal,
 // i'm just trying to get the right dataflow first.
+fn size_2_radix_2_dit(x: &mut [M31C; 8]) {
+    let mut tmp = x[0];
+    x[0] = *tmp.clone().add_assign(&x[1]);
+    x[1] = *tmp.sub_assign(&x[1]);
+}
+
+fn size_4_radix_2_dit(x: &mut [M31C; 8]) {
+    // first stage
+    for i in 0..2 {
+        let mut tmp = x[i as usize];
+        x[i] = *tmp.clone().add_assign(&x[i + 2]);
+        x[i + 2] = *tmp.sub_assign(&x[i + 2]);
+    }
+
+    // second stage
+    mul_assign_w_1_4(&mut x[3]);
+    for i in [0, 2].iter() {
+        let i = *i as usize;
+        let mut tmp = x[i];
+        x[i] = *tmp.clone().add_assign(&x[i + 1]);
+        x[i + 1] = *tmp.sub_assign(&x[i + 1]);
+    }
+
+    // undo bitrev
+    let tmp = x[1];
+    x[1] = x[2];
+    x[2] = tmp;
+}
+
 fn size_8_radix_2_dit(x: &mut [M31C; 8]) {
     // first stage
     for i in 0..4 {
@@ -79,11 +101,13 @@ fn stockham_radix_8_dif_impl(
     independent_fft_count: usize,
     independent_fft_len: usize,
     twiddles: &[M31C],
+    eo: bool,
 ) {
-    // radix-8 exchanges (same pattern regardless of stage)
-    let len_over_8 = x.len() / 8;
-    let mut scratch = [M31C::ZERO; 8];
-    for i in 0..len_over_8 {
+    // radix <= 8 exchanges
+    let sub_dft_len = std::cmp::min(8, independent_fft_len);
+    let sub_dft_count = x.len() / sub_dft_len;
+    let mut scratch = [M31C::ZERO; 8]; // always 8, must be constant
+    for i in 0..sub_dft_count {
         // can't collect into a fixed-size array
         // let mut size_8_fft: Vec<M31C> = x[i..]
         //     .iter()
@@ -91,16 +115,27 @@ fn stockham_radix_8_dif_impl(
         //     .take(8)
         //     .map(|x| x.clone())
         //     .collect();
-        for j in 0..8 {
-            scratch[j] = x[i + len_over_8 * j];
+        for j in 0..sub_dft_len {
+            scratch[j] = x[i + sub_dft_count * j];
         }
-        size_8_radix_2_dit(&mut scratch);
-        for j in 0..8 {
-            x[i + len_over_8 * j] = scratch[j];
+        match sub_dft_len {
+            8 => size_8_radix_2_dit(&mut scratch),
+            4 => size_4_radix_2_dit(&mut scratch),
+            2 => size_2_radix_2_dit(&mut scratch),
+            _ => (),
+        }
+        if eo && independent_fft_len <= 8 {
+            for j in 0..sub_dft_len {
+                y[i + sub_dft_count * j] = scratch[j];
+            }
+        } else {
+            for j in 0..sub_dft_len {
+                x[i + sub_dft_count * j] = scratch[j];
+            }
         }
     }
 
-    if independent_fft_len == 8 {
+    if independent_fft_len <= 8 {
         return;
     }
 
@@ -132,47 +167,46 @@ fn stockham_radix_8_dif_impl(
         independent_fft_count * 8,
         independent_fft_len / 8,
         twiddles,
+        !eo,
     );
 }
 
 pub fn stockham_radix_8_dif(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
-    stockham_radix_8_dif_impl(x, y, 1, x.len(), twiddles);
+    stockham_radix_8_dif_impl(x, y, 1, x.len(), twiddles, true);
 }
 
 #[test]
 fn test_compare() {
+    use crate::fft::bitreverse::bitreverse_enumeration_inplace;
     use crate::fft::fft::{rand_from_rng, serial_ct_ntt_natural_to_bitreversed};
+    use crate::fft::tooling::{
+        distribute_powers, domain_generator_for_size, precompute_twiddles_for_fft,
+    };
 
     let worker = Worker::new();
     let mut rng = rand::thread_rng();
 
-    let log_n = 6;
-    let n = 1 << log_n;
+    for log_n in 1..16 {
+        let n = 1 << log_n;
 
-    let mut x: Vec<M31C> = (0..n).map(|_| rand_from_rng(&mut rng)).collect();
+        let mut x: Vec<M31C> = (0..n).map(|_| rand_from_rng(&mut rng)).collect();
 
-    let twiddles = precompute_twiddles_for_fft::<
-        M31C,
-        false,
-    >(x.len(), &worker);
-    let mut reference = x.clone();
-    serial_ct_ntt_natural_to_bitreversed(
-        &mut reference,
-        log_n,
-        &twiddles[..]
-    );
-    bitreverse_enumeration_inplace(&mut reference);
+        let twiddles = precompute_twiddles_for_fft::<M31C, false>(x.len(), &worker);
+        let mut reference = x.clone();
+        serial_ct_ntt_natural_to_bitreversed(&mut reference, log_n, &twiddles[..]);
+        bitreverse_enumeration_inplace(&mut reference);
 
-    let mut twiddles = vec![M31C::ONE; n];
-    let omega = domain_generator_for_size::<M31C>(n as u64);
-    distribute_powers(&mut twiddles, omega);
-    let mut y = vec![M31C::ZERO; n];
-    stockham_radix_8_dif(&mut x, &mut y, &twiddles);
+        let mut twiddles = vec![M31C::ONE; n];
+        let omega = domain_generator_for_size::<M31C>(n as u64);
+        distribute_powers(&mut twiddles, omega);
+        let mut y = vec![M31C::ZERO; n];
+        stockham_radix_8_dif(&mut x, &mut y, &twiddles);
 
-    // for (i, (output, control)) in x.iter().zip(&reference).enumerate() {
-    //     println!("{} {}", *output, control);
-    // }
-    for (i, (output, control)) in y.iter().zip(reference).enumerate() {
-        assert_eq!(*output, control, "failed at {}", i);
+        // for (i, (output, control)) in x.iter().zip(&reference).enumerate() {
+        //     println!("{} {}", *output, control);
+        // }
+        for (i, (output, control)) in y.iter().zip(reference).enumerate() {
+            assert_eq!(*output, control, "failed at {}", i);
+        }
     }
 }
