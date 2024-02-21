@@ -143,11 +143,14 @@ fn stockham_radix_8_dif_impl(
     let len_over_8 = independent_fft_len / 8;
     let shift = x.len() / independent_fft_len;
     for i in 1..8 {
+        let twiddle_i = twiddles[i * shift];
+        let mut twiddle_i_j = twiddle_i;
         for j in 1..len_over_8 {
-            let twiddle = twiddles[i * j * shift];
+            // let twiddle_i_j = twiddles[i * j * shift]; // FASTER on my desktop, weirdly
             for k in 0..independent_fft_count {
-                x[k + independent_fft_count * (j + len_over_8 * i)].mul_assign(&twiddle);
+                x[k + independent_fft_count * (j + len_over_8 * i)].mul_assign(&twiddle_i_j);
             }
+            twiddle_i_j.mul_assign(&twiddle_i);
         }
     }
 
@@ -197,7 +200,9 @@ fn test_compare() {
         let start = Instant::now();
         serial_ct_ntt_natural_to_bitreversed(&mut reference, log_n, &twiddles[..]);
         let duration_reference = start.elapsed();
+        let start = Instant::now();
         bitreverse_enumeration_inplace(&mut reference);
+        let duration_bitrev = start.elapsed();
 
         let mut twiddles = vec![M31C::ONE; n];
         let omega = domain_generator_for_size::<M31C>(n as u64);
@@ -215,8 +220,8 @@ fn test_compare() {
         }
 
         println!(
-            "log_n = {}, reference took {:?}, stockham took {:?}",
-            log_n, duration_reference, duration_stockham
+            "log_n = {}, reference took {:?}, stockham took {:?}, bitrev took {:?}",
+            log_n, duration_reference, duration_stockham, duration_bitrev,
         );
     }
 }
