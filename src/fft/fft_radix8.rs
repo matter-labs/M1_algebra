@@ -95,7 +95,7 @@ fn size_8_radix_2_dit(x: &mut [M31C; 8]) {
     x[6] = tmp;
 }
 
-fn stockham_radix_8_dif_impl(
+fn stockham_radix_8_dif_naive_impl(
     x: &mut [M31C],
     y: &mut [M31C],
     independent_fft_count: usize,
@@ -143,14 +143,14 @@ fn stockham_radix_8_dif_impl(
     let len_over_8 = independent_fft_len / 8;
     let shift = x.len() / independent_fft_len;
     for i in 1..8 {
-        let twiddle_i = twiddles[i * shift];
-        let mut twiddle_i_j = twiddle_i;
+        // let twiddle_i = twiddles[i * shift];
+        // let mut twiddle_i_j = twiddle_i;
         for j in 1..len_over_8 {
-            // let twiddle_i_j = twiddles[i * j * shift]; // FASTER on my desktop, weirdly
+            let twiddle_i_j = twiddles[i * j * shift]; // faster, believe it or not
             for k in 0..independent_fft_count {
                 x[k + independent_fft_count * (j + len_over_8 * i)].mul_assign(&twiddle_i_j);
             }
-            twiddle_i_j.mul_assign(&twiddle_i);
+            // twiddle_i_j.mul_assign(&twiddle_i);
         }
     }
 
@@ -164,7 +164,7 @@ fn stockham_radix_8_dif_impl(
         }
     }
 
-    stockham_radix_8_dif_impl(
+    stockham_radix_8_dif_naive_impl(
         y,
         x,
         independent_fft_count * 8,
@@ -174,8 +174,79 @@ fn stockham_radix_8_dif_impl(
     );
 }
 
-pub fn stockham_radix_8_dif(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
-    stockham_radix_8_dif_impl(x, y, 1, x.len(), twiddles, true);
+fn stockham_radix_8_dif_cache_blocked_impl(
+    x: &mut [M31C],
+    y: &mut [M31C],
+    independent_fft_count: usize,
+    independent_fft_len: usize,
+    twiddles: &[M31C],
+    eo: bool,
+) {
+    // radix <= 8 exchanges
+    let mut scratch = [M31C::ZERO; 8]; // always 8, must be constant
+
+    if independent_fft_len <= 8 {
+        let sub_dft_len = std::cmp::min(8, independent_fft_len);
+        let sub_dft_count = x.len() / sub_dft_len;
+        for i in 0..sub_dft_count {
+            for j in 0..sub_dft_len {
+                scratch[j] = x[i + sub_dft_count * j];
+            }
+            match sub_dft_len {
+                8 => size_8_radix_2_dit(&mut scratch),
+                4 => size_4_radix_2_dit(&mut scratch),
+                2 => size_2_radix_2_dit(&mut scratch),
+                _ => (),
+            }
+            if eo && independent_fft_len <= 8 {
+                for j in 0..sub_dft_len {
+                    y[i + sub_dft_count * j] = scratch[j];
+                }
+            } else {
+                for j in 0..sub_dft_len {
+                    x[i + sub_dft_count * j] = scratch[j];
+                }
+            }
+        }
+        return;
+    }
+
+    // do sub-dfts, apply twiddles, and transpose within independent ffts
+    // attempt cache blocking in j and k
+    let len_over_8 = independent_fft_len / 8;
+    let shift = x.len() / independent_fft_len;
+    for i in 0..len_over_8 {
+        for j in 0..independent_fft_count {
+            for k in 0..8 {
+                scratch[k] = x[j + independent_fft_count * (i + len_over_8 * k)];
+            }
+            size_8_radix_2_dit(&mut scratch);
+            for k in 0..8 {
+                if i > 0 && k > 0 {
+                    let twiddle_i_k = twiddles[i * k * shift];
+                    scratch[k].mul_assign(&twiddle_i_k);
+                }
+                y[j + independent_fft_count * (k + 8 * i)] = scratch[k];
+            }
+        }
+    }
+
+    stockham_radix_8_dif_cache_blocked_impl(
+        y,
+        x,
+        independent_fft_count * 8,
+        independent_fft_len / 8,
+        twiddles,
+        !eo,
+    );
+}
+
+pub fn stockham_radix_8_dif_naive(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
+    stockham_radix_8_dif_naive_impl(x, y, 1, x.len(), twiddles, true);
+}
+
+pub fn stockham_radix_8_dif_cache_blocked(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
+    stockham_radix_8_dif_cache_blocked_impl(x, y, 1, x.len(), twiddles, true);
 }
 
 #[test]
@@ -190,7 +261,7 @@ fn test_compare() {
     let worker = Worker::new();
     let mut rng = rand::thread_rng();
 
-    for log_n in 1..17 {
+    for log_n in 1..23 {
         let n = 1 << log_n;
 
         let mut x: Vec<M31C> = (0..n).map(|_| rand_from_rng(&mut rng)).collect();
@@ -207,21 +278,30 @@ fn test_compare() {
         let mut twiddles = vec![M31C::ONE; n];
         let omega = domain_generator_for_size::<M31C>(n as u64);
         distribute_powers(&mut twiddles, omega);
-        let mut y = vec![M31C::ZERO; n];
-        let start = Instant::now();
-        stockham_radix_8_dif(&mut x, &mut y, &twiddles);
-        let duration_stockham = start.elapsed();
 
-        // for (i, (output, control)) in x.iter().zip(&reference).enumerate() {
-        //     println!("{} {}", *output, control);
-        // }
-        for (i, (output, control)) in y.iter().zip(reference).enumerate() {
-            assert_eq!(*output, control, "failed at {}", i);
+        let mut x_cache_blocked = x.clone();
+        let mut y_cache_blocked = vec![M31C::ZERO; n];
+        let start = Instant::now();
+        stockham_radix_8_dif_cache_blocked(&mut x_cache_blocked, &mut y_cache_blocked, &twiddles);
+        let duration_cache_blocked = start.elapsed();
+
+        let mut x_naive = x.clone();
+        let mut y_naive = vec![M31C::ZERO; n];
+        let start = Instant::now();
+        stockham_radix_8_dif_naive(&mut x_naive, &mut y_naive, &twiddles);
+        let duration_naive = start.elapsed();
+
+        for (i, (output, control)) in y_naive.iter().zip(&reference).enumerate() {
+            assert_eq!(output, control, "naive failed at {}", i);
+        }
+
+        for (i, (output, control)) in y_cache_blocked.iter().zip(&y_naive).enumerate() {
+            assert_eq!(output, control, "cache_blocked failed at {}", i);
         }
 
         println!(
-            "log_n = {}, reference took {:?}, stockham took {:?}, bitrev took {:?}",
-            log_n, duration_reference, duration_stockham, duration_bitrev,
+            "log_n = {:2}, reference {:#?}, naive {:?}, cache_blocked {:?}, bitrev {:?}",
+            log_n, duration_reference, duration_naive, duration_cache_blocked, duration_bitrev,
         );
     }
 }
