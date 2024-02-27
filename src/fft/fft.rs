@@ -127,6 +127,8 @@ fn unpack_after_fft(input: &[Mersenne31Complex], inv_flag: InvFlag) -> Vec<Merse
         let mut x = input[j];
         let mut y = input[k - j];
         
+        // 2 * Xo = -j * ((xr + j * xc) - (yr - j * yc)
+        //        = -j * (xr - yr + j * xc + j * yc)
         let mut odd = Mersenne31Complex::new(*(x.imag_part.add_assign(&y.imag_part)), *y.real_part.sub_assign(&x.real_part));
         
         // -- (x.im + y.im) + I (y.re - x.re) =?= - I (x - conj(y)) -- seems to work
@@ -203,6 +205,10 @@ fn idft_pack(input: &[Mersenne31Complex], inv_flag: InvFlag) -> Vec<Mersenne31Co
         let mut x = input[j];
         let mut y = input[len - j];
         
+        // j * 2 * Xo = j * ((xr + j xc) - (yr - j * yc))
+        //            = j * (xr - yr + j * xc + j * yc)
+        //            = j * (xr - yr) - xc - yc
+        //            = -(xc + yc - j * (yr -xr))
         let mut odd = Mersenne31Complex::new(*(x.imag_part.add_assign(&y.imag_part)), *y.real_part.sub_assign(&x.real_part));
         let tmp = odd.mul_assign(&omega_power);
         let tmp2 = even.sub_assign(tmp);
