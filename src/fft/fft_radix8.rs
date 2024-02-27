@@ -175,6 +175,10 @@ fn stockham_radix_8_dif_naive_impl(
     );
 }
 
+pub fn stockham_radix_8_dif_naive(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
+    stockham_radix_8_dif_naive_impl(x, y, 1, x.len(), twiddles, true);
+}
+
 fn stockham_radix_8_dif_cache_blocked_impl(
     x: &mut [M31C],
     y: &mut [M31C],
@@ -244,7 +248,11 @@ fn stockham_radix_8_dif_cache_blocked_impl(
     );
 }
 
-fn stockham_radix_8_dit_naive_impl(
+pub fn stockham_radix_8_dif_cache_blocked(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
+    stockham_radix_8_dif_cache_blocked_impl(x, y, 1, x.len(), twiddles, true);
+}
+
+fn stockham_radix_8_dit_naive_non_8_last_impl(
     x: &mut [M31C],
     y: &mut [M31C],
     independent_fft_count: usize,
@@ -253,7 +261,7 @@ fn stockham_radix_8_dit_naive_impl(
     eo: bool,
 ) {
     if independent_fft_len > 8 {
-        stockham_radix_8_dit_naive_impl(
+        stockham_radix_8_dit_naive_non_8_last_impl(
             y,
             x,
             independent_fft_count * 8,
@@ -325,16 +333,104 @@ fn stockham_radix_8_dit_naive_impl(
     }
 }
 
-pub fn stockham_radix_8_dif_naive(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
-    stockham_radix_8_dif_naive_impl(x, y, 1, x.len(), twiddles, true);
+pub fn stockham_radix_8_dit_naive_non_8_last(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
+    stockham_radix_8_dit_naive_non_8_last_impl(x, y, 1, x.len(), twiddles, true);
 }
 
-pub fn stockham_radix_8_dif_cache_blocked(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
-    stockham_radix_8_dif_cache_blocked_impl(x, y, 1, x.len(), twiddles, true);
+fn stockham_radix_8_dit_naive_non_8_first_impl(
+    x: &mut [M31C],
+    y: &mut [M31C],
+    independent_fft_count: usize,
+    independent_fft_len: usize,
+    twiddles: &[M31C],
+    eo: bool,
+) {
+    let sub_dft_len = if independent_fft_count == 1 {
+        // is there a prettier way to express this?
+        let rem = x.len().trailing_zeros() % 3;
+        if rem == 0 {
+            8
+        } else {
+            1 << rem
+        }
+    } else {
+        8
+    };
+    let sub_dft_regions = x.len() / sub_dft_len / independent_fft_count;
+    let sub_region_len = sub_dft_len * independent_fft_count;
+
+    if independent_fft_len > 8 {
+        stockham_radix_8_dit_naive_non_8_first_impl(
+            y,
+            x,
+            independent_fft_count * sub_dft_len,
+            independent_fft_len / sub_dft_len,
+            twiddles,
+            !eo,
+        );
+
+        // apply twiddles
+        let len_over_8 = independent_fft_len / sub_dft_len;
+        let shift = x.len() / independent_fft_len;
+        for j in 1..len_over_8 {
+            for i in 1..sub_dft_len {
+                let twiddle_i_j = twiddles[i * j * shift];
+                for k in 0..independent_fft_count {
+                    x[k + independent_fft_count * (i + sub_dft_len * j)].mul_assign(&twiddle_i_j);
+                }
+            }
+        }
+    }
+
+    // radix <= 8 exchanges
+    let mut scratch = [M31C::ZERO; 8]; // always 8, must be constant
+    for i in 0..sub_dft_regions {
+        for j in 0..independent_fft_count {
+            if !eo && independent_fft_len == 8 {
+                for k in 0..sub_dft_len {
+                    scratch[k] = y[j + independent_fft_count * k + sub_region_len * i];
+                }
+            } else {
+                for k in 0..sub_dft_len {
+                    scratch[k] = x[j + independent_fft_count * k + sub_region_len * i];
+                }
+            }
+            match sub_dft_len {
+                8 => size_8_radix_2_dit(&mut scratch),
+                4 => size_4_radix_2_dit(&mut scratch),
+                2 => size_2_radix_2_dit(&mut scratch),
+                _ => (),
+            }
+            if independent_fft_len == 8 {
+                for k in 0..sub_dft_len {
+                    y[j + independent_fft_count * k + sub_region_len * i] = scratch[k];
+                }
+            } else {
+                for k in 0..sub_dft_len {
+                    x[j + independent_fft_count * k + sub_region_len * i] = scratch[k];
+                }
+            }
+        }
+    }
+
+    if independent_fft_len == 8 {
+        return;
+    }
+
+    // transpose within independent ffts
+    let len_over_sub_len = independent_fft_len / sub_dft_len;
+    for j in 0..len_over_sub_len {
+        for i in 0..sub_dft_len {
+            for k in 0..independent_fft_count {
+                y[k + independent_fft_count * (j + len_over_sub_len * i)] =
+                    x[k + independent_fft_count * (i + sub_dft_len * j)];
+            }
+        }
+    }
 }
 
-pub fn stockham_radix_8_dit_naive(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
-    stockham_radix_8_dit_naive_impl(x, y, 1, x.len(), twiddles, true);
+pub fn stockham_radix_8_dit_naive_non_8_first(x: &mut [M31C], y: &mut [M31C], twiddles: &[M31C]) {
+    stockham_radix_8_dit_naive_non_8_first_impl(x, y, 1, x.len(), twiddles, true);
 }
 
 #[test]
@@ -349,6 +445,39 @@ fn test_compare() {
     let worker = Worker::new();
     let mut rng = rand::thread_rng();
 
+    fn flush(x: &[M31C], y: &mut [M31C]) -> Duration {
+        let start = Instant::now();
+        for i in 0..x.len() {
+            y[i] = x[i];
+        }
+        start.elapsed()
+    }
+
+    fn do_one<F>(
+        log_n: u32,
+        input: &[M31C],
+        reference: &[M31C],
+        variant: &str,
+        mut f: F,
+    ) -> Duration
+    where
+        F: FnMut(&mut [M31C], &mut [M31C]) -> (),
+    {
+        let mut x = input.to_vec();
+        let mut y = vec![M31C::ZERO; 1 << log_n];
+        let start = Instant::now();
+        f(&mut x, &mut y);
+        let duration = start.elapsed();
+        for (i, (output, control)) in y.iter().zip(reference).enumerate() {
+            assert_eq!(
+                output, control,
+                "log_n = {}, {} failed at {}",
+                log_n, variant, i
+            );
+        }
+        duration
+    }
+
     for log_n in 1..22 {
         let n = 1 << log_n;
 
@@ -356,13 +485,6 @@ fn test_compare() {
 
         let x_flush = input.clone();
         let mut y_flush = input.clone();
-        fn flush(x: &[M31C], y: &mut [M31C]) -> Duration {
-            let start = Instant::now();
-            for i in 0..x.len() {
-                y[i] = x[i];
-            }
-            start.elapsed()
-        }
 
         let twiddles = precompute_twiddles_for_fft::<M31C, false>(input.len(), &worker);
         let mut reference = input.clone();
@@ -382,58 +504,50 @@ fn test_compare() {
 
         flush(&x_flush, &mut y_flush);
 
-        let mut x = input.clone();
-        let mut y_dif_cache_blocked = vec![M31C::ZERO; n];
-        let start = Instant::now();
-        stockham_radix_8_dif_cache_blocked(&mut x, &mut y_dif_cache_blocked, &twiddles);
-        let duration_dif_cache_blocked = start.elapsed();
+        let duration_dif_cache_blocked =
+            do_one(log_n, &input, &reference, "dif blocked", |x, y| {
+                stockham_radix_8_dif_cache_blocked(x, y, &twiddles)
+            });
 
         flush(&x_flush, &mut y_flush);
 
-        let mut x = input.clone();
-        let mut y_dif_naive = vec![M31C::ZERO; n];
-        let start = Instant::now();
-        stockham_radix_8_dif_naive(&mut x, &mut y_dif_naive, &twiddles);
-        let duration_dif_naive = start.elapsed();
+        let duration_dif_naive = do_one(log_n, &input, &reference, "dif naive", |x, y| {
+            stockham_radix_8_dif_naive(x, y, &twiddles)
+        });
 
         flush(&x_flush, &mut y_flush);
 
-        let mut x = input.clone();
-        let mut y_dit_naive = vec![M31C::ZERO; n];
-        let start = Instant::now();
-        stockham_radix_8_dit_naive(&mut x, &mut y_dit_naive, &twiddles);
-        let duration_dit_naive = start.elapsed();
+        let duration_dit_naive_non_8_last =
+            do_one(log_n, &input, &reference, "dit naive non 8 last", |x, y| {
+                stockham_radix_8_dit_naive_non_8_last(x, y, &twiddles)
+            });
 
-        for (i, (output, control)) in y_dif_naive.iter().zip(&reference).enumerate() {
-            assert_eq!(output, control, "log_n = {}, naive failed at {}", log_n, i);
-        }
+        flush(&x_flush, &mut y_flush);
 
-        for (i, (output, control)) in y_dif_cache_blocked.iter().zip(&y_dif_naive).enumerate() {
-            assert_eq!(
-                output, control,
-                "log_n = {}, cache_blocked failed at {}",
-                log_n, i
-            );
-        }
-
-        // for (i, (output, control)) in y_dif_cache_blocked.iter().zip(&y_dit_naive).enumerate() {
-        for (i, (output, control)) in y_dit_naive.iter().zip(&y_dif_naive).enumerate() {
-            assert_eq!(
-                output, control,
-                "log_n = {}, cache_blocked failed at {}",
-                log_n, i
-            );
-        }
+        let duration_dit_naive_non_8_first = do_one(
+            log_n,
+            &input,
+            &reference,
+            "dit naive non 8 first",
+            |x, y| stockham_radix_8_dit_naive_non_8_first(x, y, &twiddles),
+        );
 
         let passes = (log_n + 7) / 3;
         let bandwidth_bound_estimate_0 = passes * duration_flush_0;
         let bandwidth_bound_estimate_1 = passes * duration_flush_1;
 
         println!("log_n = {:2} ", log_n);
-        println!("    reference   {:?}", duration_reference);
-        println!("    dif naive   {:?}", duration_dif_naive);
-        println!("    dif blocked {:?}", duration_dif_cache_blocked);
-        println!("    dit naive,  {:?}", duration_dit_naive);
+        println!("    reference             {:?}", duration_reference);
+        println!("    dif naive             {:?}", duration_dif_naive);
+        println!("    dif blocked           {:?}", duration_dif_cache_blocked);
+        println!(
+            "    dit naive non 8 last  {:?}",
+            duration_dit_naive_non_8_last
+        );
+        println!(
+            "    dit naive non 8 first {:?}",
+            duration_dit_naive_non_8_first
+        );
         println!("    bitrev      {:?}", duration_bitrev);
         println!(
             "    bw bound estimates {:?} {:?}",
